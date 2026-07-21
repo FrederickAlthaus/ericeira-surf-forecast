@@ -1,0 +1,1100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ericeira Surf Forecast</title>
+<style>
+  /* ---------- basic page look ---------- */
+  :root {
+    --ink: #1c1f26;
+    --muted: #6b7280;
+    --line: #e5e7eb;
+    --card: #ffffff;
+    --bg: #f5f6f8;
+    --accent: #0c6b9c;
+
+    /* Five-tier status scale, built from a validated accessible palette
+       (two greens sharing one hue, then warning/serious/critical). Marks
+       (heat-strip cells) use the full-strength colors below; badge TEXT
+       uses separate, darker "-text" versions further down so it stays
+       readable on a light pill background — marks and text have different
+       contrast needs. Always paired with a text label, never color alone. */
+    --tier-great:      #0ca30c;
+    --tier-great-bg:   #e3f6e3;
+    --tier-great-text: #0d6b0d;
+
+    --tier-good:       #8bc34a;
+    --tier-good-bg:    #eef7e6;
+    --tier-good-text:  #1a7f37;
+
+    --tier-ok:         #fab219;
+    --tier-ok-bg:      #fdf1da;
+    --tier-ok-text:    #92600a;
+
+    --tier-bad:        #ec835a;
+    --tier-bad-bg:     #fbe6df;
+    --tier-bad-text:   #b34700;
+
+    --tier-nogo:       #d03b3b;
+    --tier-nogo-bg:    #fbe0e0;
+    --tier-nogo-text:  #7a1f1f;
+
+    --tier-nodata:     #9b9a94;
+    --tier-nodata-bg:  #eeede9;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    padding: 24px 16px 60px;
+  }
+  header {
+    max-width: 1000px;
+    margin: 0 auto 10px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  header h1 {
+    font-size: 1.5rem;
+    margin: 0 0 4px;
+  }
+  header p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.95rem;
+  }
+  .controls {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    font-size: 0.85rem;
+  }
+  .controls .field {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 3px;
+  }
+  .controls .row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .controls label {
+    color: var(--muted);
+  }
+  .controls select {
+    font: inherit;
+    font-size: 0.9rem;
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--card);
+    color: var(--ink);
+  }
+  .controls .blurb {
+    color: var(--muted);
+    font-size: 0.76rem;
+    max-width: 260px;
+    text-align: right;
+  }
+  #status {
+    max-width: 1000px;
+    margin: 0 auto 16px;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  #beaches {
+    max-width: 1000px;
+    margin: 0 auto;
+    display: grid;
+    /* Cards shrink down to 280px before wrapping to a new row, so this
+       still looks fine in a narrow sidebar/panel, not just a full browser tab. */
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px;
+    min-width: 0; /* lets the card shrink inside the grid instead of overflowing it */
+  }
+  .card h2 {
+    margin: 0;
+    font-size: 1.1rem;
+  }
+  .card .sub {
+    color: var(--muted);
+    font-size: 0.8rem;
+    margin: 2px 0 14px;
+  }
+
+  /* ---------- day blocks ----------
+     Each day is a block: a row of small "chips" that WRAP onto a new line
+     if the card is too narrow (instead of spilling outside it), a plain-
+     English description of the actual conditions, and a visual hour-by-hour
+     strip underneath. */
+  .day-block {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .day-block:last-child {
+    border-bottom: none;
+  }
+  .day-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    row-gap: 6px;
+    column-gap: 14px;
+  }
+  .day-name {
+    font-weight: 600;
+    font-size: 0.85rem;
+    min-width: 64px;
+  }
+  .stat {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+    font-size: 0.82rem;
+    white-space: nowrap; /* safe here: each stat chip is short */
+  }
+  .stat .label {
+    color: var(--muted);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+    margin-left: auto; /* pushes to the right when there's room; wraps below when not */
+  }
+  .badge.great  { background: var(--tier-great-bg); color: var(--tier-great-text); }
+  .badge.good   { background: var(--tier-good-bg);  color: var(--tier-good-text); }
+  .badge.ok     { background: var(--tier-ok-bg);     color: var(--tier-ok-text); }
+  .badge.bad    { background: var(--tier-bad-bg);    color: var(--tier-bad-text); }
+  .badge.nogo   { background: var(--tier-nogo-bg);   color: var(--tier-nogo-text); }
+  .badge.unknown{ background: var(--tier-nodata-bg); color: var(--tier-nodata); }
+
+  .conditions-text {
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-top: 5px;
+  }
+
+  .best-window {
+    font-size: 0.82rem;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .best-window .label {
+    color: var(--muted);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    margin-right: 4px;
+  }
+
+  /* ---------- hourly heat-strip ----------
+     One small block per checked hour (07:00-19:00). Color is the main
+     encoding here, but it's always backed up by: a legend, a title
+     (hover tooltip) on every cell, and the plain-English text above it —
+     so nobody has to rely on color alone. Cells are separated by a 2px
+     gap (not a border) per the usual small-multiple heatmap convention. */
+  .hour-strip {
+    display: flex;
+    gap: 2px;
+    margin-top: 8px;
+  }
+  .hour-cell {
+    flex: 1;
+    height: 14px;
+    border-radius: 3px;
+    background: var(--tier-nodata-bg);
+  }
+  .hour-cell.great { background: var(--tier-great); }
+  .hour-cell.good  { background: var(--tier-good); }
+  .hour-cell.ok    { background: var(--tier-ok); }
+  .hour-cell.bad   { background: var(--tier-bad); }
+  .hour-cell.nogo  { background: var(--tier-nogo); }
+  .hour-strip-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.65rem;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  .legend {
+    max-width: 1000px;
+    margin: 4px auto 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  .legend .key {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .legend .swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    display: inline-block;
+  }
+  .legend .swatch.great { background: var(--tier-great); }
+  .legend .swatch.good  { background: var(--tier-good); }
+  .legend .swatch.ok    { background: var(--tier-ok); }
+  .legend .swatch.bad   { background: var(--tier-bad); }
+  .legend .swatch.nogo  { background: var(--tier-nogo); }
+
+  .error {
+    color: var(--tier-nogo-text);
+    font-size: 0.85rem;
+  }
+  details.explainer {
+    max-width: 1000px;
+    margin: 16px auto 0;
+    font-size: 0.82rem;
+    color: var(--muted);
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px 14px;
+  }
+  details.explainer summary {
+    cursor: pointer;
+    color: var(--accent);
+    font-weight: 600;
+  }
+  details.explainer table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    font-size: 0.8rem;
+  }
+  details.explainer th, details.explainer td {
+    text-align: left;
+    padding: 4px 8px 4px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  details.explainer h4 {
+    margin: 14px 0 4px;
+    color: var(--ink);
+    font-size: 0.85rem;
+  }
+  footer {
+    max-width: 1000px;
+    margin: 16px auto 0;
+    color: var(--muted);
+    font-size: 0.78rem;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>🌊 Ericeira Surf Forecast</h1>
+    <p>Wave height, wind and tide for today + the next 3 days.</p>
+  </div>
+  <div class="controls">
+    <div class="field">
+      <div class="row">
+        <label for="skillSelect">I surf as a:</label>
+        <select id="skillSelect">
+          <option value="beginner" selected>Beginner</option>
+          <option value="intermediate">Intermediate</option>
+          <option value="advanced">Advanced</option>
+        </select>
+      </div>
+      <div id="skillBlurb" class="blurb"></div>
+    </div>
+    <div class="field">
+      <div class="row">
+        <label for="boardSelect">On a:</label>
+        <select id="boardSelect">
+          <option value="soft" selected>Soft-top</option>
+          <option value="hard">Hard-top</option>
+        </select>
+      </div>
+      <div id="boardBlurb" class="blurb"></div>
+    </div>
+  </div>
+</header>
+
+<div id="status">Loading forecast&hellip;</div>
+<div id="beaches"></div>
+
+<div class="legend">
+  <span class="key"><span class="swatch great"></span>Great</span>
+  <span class="key"><span class="swatch good"></span>Good</span>
+  <span class="key"><span class="swatch ok"></span>OK</span>
+  <span class="key"><span class="swatch bad"></span>Bad</span>
+  <span class="key"><span class="swatch nogo"></span>No-go</span>
+  <span>— each strip is 07:00→19:00, hover a block for that hour's numbers</span>
+</div>
+
+<details class="explainer">
+  <summary>How "Great / Good / OK / Bad / No-go" is worked out</summary>
+  <p style="margin: 8px 0 0;">
+    Every hour gets a score out of 100, starting at 100 and losing points for things that make it
+    harder to ride: waves bigger (or more powerful) than you and your board want, wind that's too
+    strong or blowing onshore, waves too small to actually catch on your board, and a choppy sea
+    where local wind-waves are swamping the underlying swell. The score then maps to a tier:
+  </p>
+  <table>
+    <tr><th>Score</th><th>Tier</th></tr>
+    <tr><td>85&ndash;100</td><td>Great</td></tr>
+    <tr><td>65&ndash;84</td><td>Good</td></tr>
+    <tr><td>40&ndash;64</td><td>OK</td></tr>
+    <tr><td>15&ndash;39</td><td>Bad</td></tr>
+    <tr><td>0&ndash;14</td><td>No-go</td></tr>
+  </table>
+
+  <h4>Skill level &amp; board limits (for your current picks above)</h4>
+  <table id="rulesTable"><!-- filled in by JavaScript --></table>
+
+  <h4>What do "Beginner / Intermediate / Advanced" mean here?</h4>
+  <table id="skillDefinitionsTable"><!-- filled in by JavaScript --></table>
+
+  <h4>Soft-top vs. hard-top</h4>
+  <table id="boardDefinitionsTable"><!-- filled in by JavaScript --></table>
+
+  <h4>Why one beach might read smaller than the raw forecast</h4>
+  <p style="margin: 4px 0 0;">
+    The free wave model behind this app reports open-water conditions for each beach's GPS point —
+    it has no way to know about small local features like a harbour breakwater. <strong>Praia do
+    Sul</strong> is sheltered by Ericeira's harbour wall and reliably runs smaller than the open-water
+    number suggests, so its forecast is deliberately scaled down (currently to 65% of the raw model
+    wave height) based on what's actually been seen there in person — not guessed. This is a starting
+    estimate, not a precise measurement, and worth refining further as more real visits confirm it.
+  </p>
+
+  <h4>Factors NOT in this app (yet)</h4>
+  <p style="margin: 4px 0 0;">
+    A few real factors aren't included because there's no reliable free data source, or because
+    getting it wrong would be worse than leaving it out: which tide each specific beach actually
+    prefers (a beach break can behave very differently at low vs. high tide, but this needs local
+    knowledge per spot), swell <em>direction</em> matching a beach's exact orientation (matters a lot
+    for a point break like Ribeira d'Ilhas), crowd levels, underwater hazards/rip currents, and
+    water temperature (for wetsuit choice). Worth keeping in mind alongside whatever this page says.
+  </p>
+
+  <p style="margin: 10px 0 0;">
+    These are presets, not a live settings panel — on purpose, so the numbers stay simple and
+    visible in the tables above. If they don't match how you actually surf, open <code>index.html</code>
+    in a text editor and edit the <code>SKILL_LEVELS</code> / <code>BOARD_TYPES</code> objects near
+    the top of the <code>&lt;script&gt;</code> — it's plain numbers, nothing else needs to change.
+  </p>
+</details>
+
+<footer>
+  Data from <a href="https://open-meteo.com" target="_blank" rel="noopener">Open&#8209;Meteo</a> (free, no API key).
+  Numbers shown are a local-noon snapshot; the strip and "Best time" check every hour between
+  07:00 and 19:00. This is a simplified guess, not safety advice &mdash; always check conditions
+  yourself or ask a local surf school before heading out.
+</footer>
+
+<script>
+/* ==========================================================================
+   1. THE BEACHES
+   Add, remove or edit beaches here. lat/lon are the GPS coordinates
+   Open-Meteo uses to find the nearest forecast point.
+
+   waveExposure: the free wave model behind this app has no idea about
+   small local features like a harbour breakwater or a sheltering headland
+   — it just reports open-water conditions for that GPS point. For a spot
+   that's genuinely more sheltered than the surrounding coast (confirmed by
+   actually going and looking, not guessed), waveExposure lets us dial the
+   raw wave height down before it's scored, so the app doesn't call a
+   cove "Great" when the model's swell never actually reaches the sand.
+   1.0 = trust the raw model as-is. Lower = known to run smaller in person.
+   Only change this from 1.0 based on real on-the-ground observation —
+   same rule we've been using for everything else this app guesses at.
+   ========================================================================== */
+const BEACHES = [
+  {
+    name: "Praia do Sul",
+    note: "Ericeira town beach — sheltered by the harbour breakwater, real waves usually run smaller than Foz do Lizandro",
+    lat: 38.9600,
+    lon: -9.4190,
+    // See "3b. BEACH EXPOSURE" below — the open-water forecast model has no
+    // idea this cove sits behind a breakwater, so we dial the raw wave
+    // height down to better match what Fred's actually seen in person.
+    waveExposure: 0.65,
+  },
+  {
+    name: "Foz do Lizandro",
+    note: "Sandy beach break — a classic beginner spot",
+    lat: 38.9423,
+    lon: -9.4170,
+    waveExposure: 1.0,
+  },
+  {
+    name: "Ribeira d'Ilhas",
+    note: "Famous reef point break — better for improvers on small days",
+    lat: 38.9835,
+    lon: -9.4230,
+    waveExposure: 1.0,
+  },
+  {
+    name: "São Lourenço",
+    note: "Gentle beach break, popular with surf schools",
+    lat: 39.0120,
+    lon: -9.4210,
+    waveExposure: 1.0,
+  },
+];
+
+// How many days to show, including today.
+const DAYS_TO_SHOW = 4;
+
+// Which hours of the day we check (heat-strip, "best time", noon snapshot).
+// (No point checking the middle of the night.) These are also the only
+// hours we need raw data for, so this range doubles as our data window.
+const CHECK_HOUR_START = 7;   // 07:00
+const CHECK_HOUR_END = 19;    // 19:00 (last hour checked, inclusive)
+
+/* ==========================================================================
+   2. SKILL LEVELS
+   Each level has its own limits:
+     - maxWaveHeight       biggest wave (in metres) this level is comfy with
+     - longPeriodFromSec   a wave period at or above this many seconds counts
+                           as a "powerful" groundswell (long gap between waves
+                           = each one carries more energy than the height alone
+                           suggests)
+     - maxWaveHeightPowerful  a STRICTER wave-height limit used only when the
+                           swell counts as "powerful" (see above)
+     - maxWindSpeed        wind speed (km/h) this level can handle, any direction
+     - maxOnshoreWindSpeed a lower wind speed limit that applies specifically
+                           when the wind is onshore (blowing in off the sea),
+                           because onshore wind makes waves choppier
+     - blurb               a plain-English description of who this level is
+   These get combined with BOARD_TYPES below (a board tightens or loosens
+   these same limits) before being turned into an hour's score.
+   ========================================================================== */
+const SKILL_LEVELS = {
+  beginner: {
+    label: "Beginner",
+    blurb: "Learning to stand up or still mostly riding whitewash. Wants small, gentle, " +
+           "well-organised waves and calm wind.",
+    maxWaveHeight: 1.0,
+    longPeriodFromSec: 11,
+    maxWaveHeightPowerful: 0.7,
+    maxWindSpeed: 25,
+    maxOnshoreWindSpeed: 15,
+  },
+  intermediate: {
+    label: "Intermediate",
+    blurb: "Comfortable catching green (unbroken) waves and duck-diving under whitewash. " +
+           "Fine with moderate size, some wind, and a bit of chop.",
+    maxWaveHeight: 2.0,
+    longPeriodFromSec: 13,
+    maxWaveHeightPowerful: 1.5,
+    maxWindSpeed: 32,
+    maxOnshoreWindSpeed: 22,
+  },
+  advanced: {
+    label: "Advanced",
+    blurb: "Confident in bigger or more powerful/hollow surf, and happy to paddle out " +
+           "in wind and less-than-perfect conditions.",
+    maxWaveHeight: 4.0,
+    longPeriodFromSec: 15,
+    maxWaveHeightPowerful: 3.0,
+    maxWindSpeed: 45,
+    maxOnshoreWindSpeed: 32,
+  },
+};
+
+/* ==========================================================================
+   2b. BOARD TYPES
+   A board changes what a given skill level can comfortably ride:
+     - minWaveHeight          below this, there's not enough push to actually
+                               catch a wave on this board at all
+     - waveCeilingMultiplier  multiplies the skill's wave-height limits —
+                               < 1 tightens them (harder to control), > 1
+                               loosens them (copes better with size/power)
+     - windToleranceMultiplier same idea, applied to the skill's wind limits
+   ========================================================================== */
+const BOARD_TYPES = {
+  soft: {
+    label: "Soft-top / foam board",
+    blurb: "Buoyant and forgiving — the easiest board to catch small, weak waves on. " +
+           "Harder to control, and doesn't duck-dive well, once it gets bigger or more powerful.",
+    minWaveHeight: 0.25,
+    waveCeilingMultiplier: 0.80,
+    windToleranceMultiplier: 0.85,
+  },
+  hard: {
+    label: "Hard-top (fibreglass/epoxy)",
+    blurb: "More responsive and duck-dives properly, so it copes with bigger or more powerful " +
+           "waves — but needs more push to actually catch smaller, weaker ones.",
+    minWaveHeight: 0.40,
+    waveCeilingMultiplier: 1.05,
+    windToleranceMultiplier: 0.95,
+  },
+};
+
+// Ericeira's beaches all face roughly west/south-west, so one shared
+// compass window works for all of them to describe wind direction.
+const ONSHORE_MIN_DEG = 202.5;   // SSW — wind blowing in off the sea (choppy)
+const ONSHORE_MAX_DEG = 337.5;   // NNW
+const OFFSHORE_MIN_DEG = 22.5;   // NNE — wind blowing off the land (cleans waves up)
+const OFFSHORE_MAX_DEG = 157.5;  // SSE
+
+function isOnshore(deg) {
+  return deg >= ONSHORE_MIN_DEG && deg <= ONSHORE_MAX_DEG;
+}
+function isOffshore(deg) {
+  return deg >= OFFSHORE_MIN_DEG && deg <= OFFSHORE_MAX_DEG;
+}
+
+/* ==========================================================================
+   3. THE SCORE
+   Every hour starts at 100 points ("perfect") and loses points for anything
+   that makes it harder to ride, GIVEN the chosen skill level and board.
+   The final score is then mapped to a tier (see TIER_THRESHOLDS below).
+   This is easier to reason about than a long chain of if/else rules once
+   you've got more than one or two factors — each factor just subtracts its
+   own penalty, independently, and you can see exactly why a hint scored
+   what it did in `reasons`.
+   ========================================================================== */
+const TIER_THRESHOLDS = [
+  { min: 85, tier: "great" },
+  { min: 65, tier: "good" },
+  { min: 40, tier: "ok" },
+  { min: 15, tier: "bad" },
+  { min: 0,  tier: "nogo" },
+];
+const TIER_LABELS = { great: "Great", good: "Good", ok: "OK", bad: "Bad", nogo: "No-go" };
+
+function tierFromScore(score) {
+  for (const { min, tier } of TIER_THRESHOLDS) {
+    if (score >= min) return tier;
+  }
+  return "nogo";
+}
+
+// h = { waveHeight, wavePeriod, windSpeed, windDir, windWaveHeight }
+function scoreHour(h, skill, board) {
+  if (h.waveHeight === null || h.windSpeed === null || h.windDir === null) {
+    return null; // not enough data to judge
+  }
+
+  let score = 100;
+  const reasons = [];
+  const boardName = board.label.toLowerCase();
+
+  const isPowerfulSwell = h.wavePeriod !== null && h.wavePeriod >= skill.longPeriodFromSec;
+  const waveLimit = (isPowerfulSwell ? skill.maxWaveHeightPowerful : skill.maxWaveHeight) * board.waveCeilingMultiplier;
+  const windCap = skill.maxWindSpeed * board.windToleranceMultiplier;
+  const onshoreCap = skill.maxOnshoreWindSpeed * board.windToleranceMultiplier;
+  const onshore = isOnshore(h.windDir);
+
+  // --- too small to catch on this board ---
+  if (h.waveHeight < board.minWaveHeight) {
+    // The closer to totally flat, the harder the penalty — dead flat should
+    // land in "no-go" territory (there's genuinely nothing to ride), while
+    // just-a-touch-under-minimum is more of an "ok, maybe an occasional one" call.
+    const shortfall = (board.minWaveHeight - h.waveHeight) / board.minWaveHeight; // 0..1
+    score -= Math.min(95, 50 + shortfall * 45);
+    reasons.push(`too small to catch on a ${boardName}`);
+  } else {
+    // --- too big / too powerful (only matters if it's actually catchable) ---
+    if (h.waveHeight >= waveLimit) {
+      const overBy = h.waveHeight / waveLimit - 1; // 0 = right at the limit
+      score -= Math.min(90, 40 + overBy * 160);
+      reasons.push(isPowerfulSwell ? "bigger/more powerful than comfortable" : "bigger than comfortable");
+    } else if (h.waveHeight >= waveLimit * 0.8) {
+      // getting close to the limit, but not over it yet — a soft warning
+      const closeness = (h.waveHeight - waveLimit * 0.8) / (waveLimit * 0.2); // 0..1
+      score -= closeness * 15;
+      if (closeness > 0.5) reasons.push("getting close to the size limit for you");
+    }
+  }
+
+  // --- wind ---
+  if (h.windSpeed > windCap) {
+    score -= Math.min(60, 20 + (h.windSpeed - windCap) * 4);
+    reasons.push("too windy");
+  } else if (onshore && h.windSpeed > onshoreCap) {
+    score -= Math.min(45, 20 + (h.windSpeed - onshoreCap) * 4);
+    reasons.push("choppy onshore wind");
+  } else if (h.windSpeed > windCap * 0.7) {
+    const closeness = (h.windSpeed - windCap * 0.7) / (windCap * 0.3); // 0..1
+    score -= closeness * 10;
+  }
+
+  // --- confused sea: local wind-chop swamping the underlying swell ---
+  if (h.windWaveHeight !== null && h.waveHeight > 0) {
+    const chopRatio = h.windWaveHeight / h.waveHeight;
+    if (chopRatio >= 0.6) {
+      score -= 20;
+      reasons.push("confused, wind-chopped sea");
+    } else if (chopRatio >= 0.4) {
+      score -= 10;
+      reasons.push("a little wind-chop mixed in");
+    }
+  }
+
+  score = Math.max(0, Math.min(100, Math.round(score)));
+  return { score, tier: tierFromScore(score), reasons };
+}
+
+/* ==========================================================================
+   4. PLAIN-ENGLISH CONDITIONS DESCRIPTION
+   This is deliberately SKILL/BOARD-INDEPENDENT — it describes what the
+   ocean is actually doing (not whether that's good for you), so it always
+   means the same thing no matter which options are selected above.
+   ========================================================================== */
+function describeSize(waveHeightM) {
+  if (waveHeightM < 0.4) return "Tiny";
+  if (waveHeightM < 0.8) return "Small";
+  if (waveHeightM < 1.4) return "Moderate";
+  if (waveHeightM < 2.2) return "Large";
+  return "Very large";
+}
+
+function describePower(wavePeriodSec) {
+  if (wavePeriodSec === null) return "";
+  if (wavePeriodSec < 8) return "short-period wind swell — choppier, less organised";
+  if (wavePeriodSec < 11) return "medium-period swell";
+  return "long-period groundswell — hits harder than the height alone suggests";
+}
+
+function describeWind(windSpeedKmh, windDirectionDeg) {
+  let speedWord = "light";
+  if (windSpeedKmh > 30) speedWord = "very strong";
+  else if (windSpeedKmh > 20) speedWord = "strong";
+  else if (windSpeedKmh > 10) speedWord = "moderate";
+
+  let dirWord = "cross-shore";
+  if (isOnshore(windDirectionDeg)) dirWord = "onshore (choppier)";
+  else if (isOffshore(windDirectionDeg)) dirWord = "offshore (cleaner)";
+
+  return `${speedWord} ${dirWord} wind (${Math.round(windSpeedKmh)} km/h ${compassLabel(windDirectionDeg)})`;
+}
+
+function describeConditions(entry) {
+  if (!entry) return null;
+  const sizePart = describeSize(entry.waveHeight);
+  const powerPart = describePower(entry.wavePeriod);
+  const windPart = describeWind(entry.windSpeed, entry.windDir);
+  const wavePart = powerPart ? `${sizePart} waves (${powerPart})` : `${sizePart} waves`;
+  let text = `${wavePart} with ${windPart}.`;
+  if (entry.windWaveHeight !== null && entry.waveHeight > 0) {
+    const chopRatio = entry.windWaveHeight / entry.waveHeight;
+    if (chopRatio >= 0.6) text += " A lot of wind-chop mixed in — expect a bumpy, disorganised sea.";
+    else if (chopRatio >= 0.4) text += " Some wind-chop mixed in.";
+  }
+  return text;
+}
+
+/* ==========================================================================
+   5. SMALL HELPERS
+   ========================================================================== */
+
+// Turn a compass degree (0-360) into a short label like "NW".
+function compassLabel(deg) {
+  if (deg === null || deg === undefined) return "–";
+  const labels = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+  const index = Math.round(deg / 22.5) % 16;
+  return labels[index];
+}
+
+// Format a JS Date as e.g. "Wed 08 Jul"
+function formatDayLabel(date, isToday) {
+  if (isToday) return "Today";
+  return date.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" });
+}
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+// List the next DAYS_TO_SHOW date strings ("YYYY-MM-DD"), starting today,
+// based on the hourly time array returned by the API (so it matches
+// whatever timezone we asked for).
+function collectDateStrings(hourlyTimes, howMany) {
+  const seen = [];
+  for (const t of hourlyTimes) {
+    const d = t.slice(0, 10);
+    if (!seen.includes(d)) seen.push(d);
+    if (seen.length >= howMany) break;
+  }
+  return seen;
+}
+
+// Turn a list of hours (e.g. [8, 9, 10, 16, 17]) into readable ranges
+// (e.g. "08:00–11:00, 16:00–18:00"). Consecutive hours get merged into
+// one range; each range's end label is the hour AFTER the last matching
+// hour, since "matches at 10" means "matches until 11".
+function formatHourRanges(matchingHours) {
+  if (matchingHours.length === 0) return null;
+  const ranges = [];
+  let start = matchingHours[0];
+  let prev = matchingHours[0];
+  for (let i = 1; i <= matchingHours.length; i++) {
+    const h = matchingHours[i];
+    if (h === prev + 1) {
+      prev = h;
+      continue;
+    }
+    ranges.push(`${pad2(start)}:00–${pad2(prev + 1)}:00`);
+    start = h;
+    prev = h;
+  }
+  return ranges.join(", ");
+}
+
+/* ==========================================================================
+   6. FETCHING DATA (runs ONCE per page load)
+   Two free Open-Meteo endpoints, no API key needed:
+   - marine-api.open-meteo.com  -> wave height, wave period, wind-wave height
+                                   (local wind-chop) + tide (sea level)
+   - api.open-meteo.com         -> wind speed + direction
+
+   We deliberately fetch the RAW hour-by-hour numbers and store them as-is.
+   Deciding "good or not" happens later, at render time (step 8), so that
+   switching the skill/board dropdowns can instantly recompute everything
+   from data already in memory — no need to hit the API again.
+   ========================================================================== */
+async function fetchBeachRawData(beach) {
+  const marineUrl =
+    `https://marine-api.open-meteo.com/v1/marine?latitude=${beach.lat}&longitude=${beach.lon}` +
+    `&hourly=wave_height,wave_period,wind_wave_height,sea_level_height_msl&timezone=Europe%2FLisbon&forecast_days=${DAYS_TO_SHOW}`;
+
+  const windUrl =
+    `https://api.open-meteo.com/v1/forecast?latitude=${beach.lat}&longitude=${beach.lon}` +
+    `&hourly=wind_speed_10m,wind_direction_10m&wind_speed_unit=kmh&timezone=Europe%2FLisbon&forecast_days=${DAYS_TO_SHOW}`;
+
+  const [marineRes, windRes] = await Promise.all([fetch(marineUrl), fetch(windUrl)]);
+
+  if (!marineRes.ok || !windRes.ok) {
+    throw new Error("The forecast service didn't respond properly.");
+  }
+
+  const marine = await marineRes.json();
+  const wind = await windRes.json();
+
+  // Build "time string -> index" maps once, so looking up a specific hour
+  // (e.g. "2026-07-08T14:00") is instant instead of scanning the array.
+  const marineIndexByTime = new Map();
+  marine.hourly.time.forEach((t, i) => marineIndexByTime.set(t, i));
+  const windIndexByTime = new Map();
+  wind.hourly.time.forEach((t, i) => windIndexByTime.set(t, i));
+
+  const dateStrings = collectDateStrings(marine.hourly.time, DAYS_TO_SHOW);
+  const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Lisbon" }); // "YYYY-MM-DD"
+
+  // How much of the open-water model's wave energy we trust for THIS beach
+  // specifically (see the waveExposure comment up in section 1). Applied to
+  // both wave_height and wind_wave_height, since a sheltered cove damps down
+  // the local wind-chop too, not just the underlying swell.
+  const exposure = beach.waveExposure ?? 1.0;
+
+  const days = dateStrings.map((dateStr) => {
+    // Raw hour-by-hour readings for this day (only the hours we care about).
+    const hours = [];
+    for (let hour = CHECK_HOUR_START; hour <= CHECK_HOUR_END; hour++) {
+      const timeKey = `${dateStr}T${pad2(hour)}:00`;
+      const mIdx = marineIndexByTime.get(timeKey);
+      const wIdx = windIndexByTime.get(timeKey);
+      if (mIdx === undefined || wIdx === undefined) continue;
+      hours.push({
+        hour,
+        waveHeight: marine.hourly.wave_height[mIdx] * exposure,
+        wavePeriod: marine.hourly.wave_period[mIdx],
+        windWaveHeight: marine.hourly.wind_wave_height[mIdx] * exposure,
+        windSpeed: wind.hourly.wind_speed_10m[wIdx],
+        windDir: wind.hourly.wind_direction_10m[wIdx],
+      });
+    }
+
+    // The reading closest to noon — used for the at-a-glance stats and for
+    // the plain-English description (both skill/board-independent).
+    const noonEntry = hours.reduce((best, h) => {
+      if (!best) return h;
+      return Math.abs(h.hour - 12) < Math.abs(best.hour - 12) ? h : best;
+    }, null);
+
+    // Tide doesn't depend on skill/board either: the sea level reading
+    // closest to noon, plus whether it's risen or fallen vs. the hour before.
+    let tideNow = null, tideTrend = "";
+    if (noonEntry) {
+      const noonTimeKey = `${dateStr}T${pad2(noonEntry.hour)}:00`;
+      const noonIdx = marineIndexByTime.get(noonTimeKey);
+      const prevIdx = noonIdx - 1;
+      tideNow = marine.hourly.sea_level_height_msl[noonIdx];
+      const tidePrev = prevIdx >= 0 ? marine.hourly.sea_level_height_msl[prevIdx] : null;
+      if (tideNow !== null && tidePrev !== null) {
+        tideTrend = tideNow > tidePrev ? "↑" : (tideNow < tidePrev ? "↓" : "→");
+      }
+    }
+
+    return {
+      date: new Date(dateStr + "T00:00:00"),
+      isToday: dateStr === todayStr,
+      hours,                                    // raw per-hour data, used at render time
+      noonEntry,                                // convenience pointer to the ~midday hour
+      conditionsText: describeConditions(noonEntry),
+      tideNow,
+      tideTrend,
+    };
+  });
+
+  return days;
+}
+
+/* ==========================================================================
+   7. TURNING RAW DATA INTO WHAT'S SHOWN ON SCREEN, FOR A GIVEN SKILL + BOARD
+   ========================================================================== */
+function computeDayView(rawDay, skill, board) {
+  const noon = rawDay.noonEntry;
+  const waveText = noon ? noon.waveHeight.toFixed(1) + " m" : "–";
+  const periodText = noon && noon.wavePeriod !== null ? Math.round(noon.wavePeriod) + "s" : null;
+  const windText = noon
+    ? Math.round(noon.windSpeed) + " km/h " + compassLabel(noon.windDir)
+    : "–";
+  const tideText = rawDay.tideNow !== null ? rawDay.tideNow.toFixed(1) + " m " + rawDay.tideTrend : "–";
+
+  const hoursByTier = { great: [], good: [], ok: [], bad: [], nogo: [] };
+  const cells = [];
+  let bestTierSoFar = null; // best (highest) tier reached by any hour today
+  const tierOrder = ["nogo", "bad", "ok", "good", "great"];
+
+  for (const h of rawDay.hours) {
+    const result = scoreHour(h, skill, board);
+    const tier = result ? result.tier : null;
+    if (tier) {
+      hoursByTier[tier].push(h.hour);
+      if (bestTierSoFar === null || tierOrder.indexOf(tier) > tierOrder.indexOf(bestTierSoFar)) {
+        bestTierSoFar = tier;
+      }
+    }
+    const scoreLabel = result ? `${TIER_LABELS[result.tier]} (${result.score}/100)` : "no data";
+    const reasonsLabel = result && result.reasons.length ? " — " + result.reasons.join(", ") : "";
+    cells.push({
+      hour: h.hour,
+      tier: tier || "unknown",
+      title: `${pad2(h.hour)}:00 — ${h.waveHeight.toFixed(1)}m` +
+             (h.wavePeriod !== null ? ` / ${Math.round(h.wavePeriod)}s` : "") +
+             `, ${Math.round(h.windSpeed)} km/h ${compassLabel(h.windDir)} — ${scoreLabel}${reasonsLabel}`,
+    });
+  }
+
+  // "Best" window = hours worth going (great or good). If none, fall back
+  // to telling you the best you'll get today, so the text never contradicts
+  // the overall tier.
+  const primeHours = [...hoursByTier.great, ...hoursByTier.good].sort((a, b) => a - b);
+  const bestWindow = formatHourRanges(primeHours);
+  let fallbackWindow = null;
+  if (!bestWindow) {
+    if (hoursByTier.ok.length) fallbackWindow = "OK only: " + formatHourRanges(hoursByTier.ok);
+    else if (hoursByTier.bad.length) fallbackWindow = "Bad all day";
+    else if (hoursByTier.nogo.length) fallbackWindow = "No-go all day";
+  }
+
+  return {
+    date: rawDay.date,
+    isToday: rawDay.isToday,
+    waveText,
+    periodText,
+    windText,
+    tideText,
+    conditionsText: rawDay.conditionsText,
+    bestWindow,
+    fallbackWindow,
+    overall: bestTierSoFar,
+    cells,
+  };
+}
+
+/* ==========================================================================
+   8. RENDERING
+   ========================================================================== */
+function renderHourStrip(cells) {
+  const wrap = document.createElement("div");
+
+  const strip = document.createElement("div");
+  strip.className = "hour-strip";
+  for (const cell of cells) {
+    const block = document.createElement("div");
+    block.className = "hour-cell " + cell.tier;
+    block.title = cell.title;
+    strip.appendChild(block);
+  }
+  wrap.appendChild(strip);
+
+  const labels = document.createElement("div");
+  labels.className = "hour-strip-labels";
+  labels.innerHTML = `<span>7am</span><span>1pm</span><span>7pm</span>`;
+  wrap.appendChild(labels);
+
+  return wrap;
+}
+
+function renderBeachCard(beach, rawDays, errorMessage, skill, board) {
+  const card = document.createElement("div");
+  card.className = "card";
+
+  const heading = document.createElement("h2");
+  heading.textContent = beach.name;
+  card.appendChild(heading);
+
+  const sub = document.createElement("div");
+  sub.className = "sub";
+  sub.textContent = beach.note;
+  card.appendChild(sub);
+
+  if (errorMessage) {
+    const err = document.createElement("div");
+    err.className = "error";
+    err.textContent = "Couldn't load forecast: " + errorMessage;
+    card.appendChild(err);
+    return card;
+  }
+
+  for (const rawDay of rawDays) {
+    const day = computeDayView(rawDay, skill, board);
+    const block = document.createElement("div");
+    block.className = "day-block";
+
+    const bestText = day.bestWindow || day.fallbackWindow || "–";
+    const waveLabel = day.periodText ? `${day.waveText} · ${day.periodText}` : day.waveText;
+
+    const badgeClass = day.overall || "unknown";
+    const badgeText = day.overall ? (TIER_LABELS[day.overall] + (day.overall === "great" || day.overall === "good" ? " ✓" : "")) : "No data";
+
+    const row = document.createElement("div");
+    row.className = "day-row";
+    row.innerHTML = `
+      <span class="day-name">${formatDayLabel(day.date, day.isToday)}</span>
+      <span class="stat"><span class="label">Wave</span>${waveLabel}</span>
+      <span class="stat"><span class="label">Wind</span>${day.windText}</span>
+      <span class="stat"><span class="label">Tide</span>${day.tideText}</span>
+      <span class="best-window"><span class="label">Best</span>${bestText}</span>
+      <span class="badge ${badgeClass}">${badgeText}</span>
+    `;
+    block.appendChild(row);
+
+    if (day.conditionsText) {
+      const desc = document.createElement("div");
+      desc.className = "conditions-text";
+      desc.textContent = day.conditionsText;
+      block.appendChild(desc);
+    }
+
+    block.appendChild(renderHourStrip(day.cells));
+    card.appendChild(block);
+  }
+
+  return card;
+}
+
+function renderRulesTable(skill, board) {
+  const table = document.getElementById("rulesTable");
+  const waveCeiling = (skill.maxWaveHeight * board.waveCeilingMultiplier).toFixed(1);
+  const waveCeilingPowerful = (skill.maxWaveHeightPowerful * board.waveCeilingMultiplier).toFixed(1);
+  const windCap = Math.round(skill.maxWindSpeed * board.windToleranceMultiplier);
+  const onshoreCap = Math.round(skill.maxOnshoreWindSpeed * board.windToleranceMultiplier);
+  table.innerHTML = `
+    <tr><th></th><th>Limit</th></tr>
+    <tr><td>Minimum wave to actually catch on this board</td><td>${board.minWaveHeight.toFixed(2)} m</td></tr>
+    <tr><td>Comfortable wave-height ceiling</td><td>${waveCeiling} m</td></tr>
+    <tr><td>...ceiling if the swell is "powerful" (period ≥ ${skill.longPeriodFromSec}s)</td><td>${waveCeilingPowerful} m</td></tr>
+    <tr><td>Wind speed cap (any direction)</td><td>${windCap} km/h</td></tr>
+    <tr><td>Wind speed cap if onshore</td><td>${onshoreCap} km/h</td></tr>
+  `;
+}
+
+function renderSkillDefinitionsTable() {
+  const table = document.getElementById("skillDefinitionsTable");
+  table.innerHTML = Object.values(SKILL_LEVELS).map(
+    (s) => `<tr><td style="white-space:nowrap; font-weight:600;">${s.label}</td><td>${s.blurb}</td></tr>`
+  ).join("");
+}
+
+function renderBoardDefinitionsTable() {
+  const table = document.getElementById("boardDefinitionsTable");
+  table.innerHTML = Object.values(BOARD_TYPES).map(
+    (b) => `<tr><td style="white-space:nowrap; font-weight:600;">${b.label}</td><td>${b.blurb}</td></tr>`
+  ).join("");
+}
+
+function updateBlurbs() {
+  const skill = SKILL_LEVELS[document.getElementById("skillSelect").value];
+  const board = BOARD_TYPES[document.getElementById("boardSelect").value];
+  document.getElementById("skillBlurb").textContent = skill.blurb;
+  document.getElementById("boardBlurb").textContent = board.blurb;
+}
+
+/* ==========================================================================
+   9. MAIN
+   fetchedResults is loaded once. renderAll() re-reads it and redraws the
+   page — it's called on first load AND every time either dropdown changes,
+   but only the FIRST call actually talks to the network.
+   ========================================================================== */
+let fetchedResults = null; // filled in once by loadData()
+
+function renderAll() {
+  const skill = SKILL_LEVELS[document.getElementById("skillSelect").value];
+  const board = BOARD_TYPES[document.getElementById("boardSelect").value];
+  updateBlurbs();
+  renderRulesTable(skill, board);
+
+  const container = document.getElementById("beaches");
+  container.innerHTML = "";
+
+  fetchedResults.forEach((result, i) => {
+    const beach = BEACHES[i];
+    if (result.status === "fulfilled") {
+      container.appendChild(renderBeachCard(beach, result.value, null, skill, board));
+    } else {
+      container.appendChild(renderBeachCard(beach, null, result.reason.message || "unknown error", skill, board));
+    }
+  });
+}
+
+async function loadData() {
+  const status = document.getElementById("status");
+  fetchedResults = await Promise.allSettled(BEACHES.map(fetchBeachRawData));
+
+  const failed = fetchedResults.filter((r) => r.status === "rejected").length;
+  if (failed === 0) {
+    status.textContent = "Updated " + new Date().toLocaleString("en-GB", { timeZone: "Europe/Lisbon" });
+  } else {
+    status.textContent = failed + " of " + BEACHES.length + " beach(es) failed to load — see details below.";
+  }
+
+  renderAll();
+}
+
+renderSkillDefinitionsTable();
+renderBoardDefinitionsTable();
+document.getElementById("skillSelect").addEventListener("change", renderAll);
+document.getElementById("boardSelect").addEventListener("change", renderAll);
+loadData();
+</script>
+
+</body>
+</html>
